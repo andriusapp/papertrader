@@ -212,16 +212,33 @@
       <div class="bt" onclick="switchBot(this,'histTab')">Trade History</div>
     </div>
     <div class="bc on" id="posTab">
-      <table><thead><tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Unrealized PnL</th><th>ROE</th><th>Value</th><th>Action</th></tr></thead>
-      <tbody id="posTb"></tbody></table>
+      <div class="bc-scroll">
+        <table><thead><tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Unrealized PnL</th><th>ROE</th><th>Value</th><th>Action</th></tr></thead>
+        <tbody id="posTb"></tbody></table>
+      </div>
     </div>
     <div class="bc" id="ordTab">
-      <table><thead><tr><th>Time</th><th>Pair</th><th>Type</th><th>Side</th><th>Price</th><th>Amount</th><th>Action</th></tr></thead>
-      <tbody id="ordTb"></tbody></table>
+      <div class="bc-scroll">
+        <table><thead><tr><th>Time</th><th>Pair</th><th>Type</th><th>Side</th><th>Price</th><th>Amount</th><th>Action</th></tr></thead>
+        <tbody id="ordTb"></tbody></table>
+      </div>
     </div>
     <div class="bc" id="histTab">
-      <table><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Fill Price</th><th>Amount</th><th>Total</th><th>Fee</th><th>Realized PnL</th></tr></thead>
-      <tbody id="histTb"></tbody></table>
+      <div class="dt-toolbar">
+        <button class="dt-btn dt-export" onclick="exportTradeData()" title="Download trade history as JSON">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export JSON
+        </button>
+        <button class="dt-btn dt-import" onclick="importTradeData()" title="Import trades from a previous APEX export">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Import JSON
+        </button>
+        <span class="dt-hint">Merge mode · existing trades are preserved</span>
+      </div>
+      <div class="bc-scroll">
+        <table><thead><tr><th>Time</th><th>Pair</th><th>Side</th><th>Fill Price</th><th>Amount</th><th>Total</th><th>Fee</th><th>Realized PnL</th></tr></thead>
+        <tbody id="histTb"></tbody></table>
+      </div>
     </div>
   </div>
 
@@ -262,6 +279,7 @@
 <script src="chart.js"></script>
 <script src="orderbook.js"></script>
 <script src="trading.js"></script>
+<script src="data_transfer.js"></script>
 <script src="settings.js"></script>
 <script src="stocks.js"></script>
 <script src="panels.js"></script>

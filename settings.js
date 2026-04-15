@@ -256,6 +256,8 @@ function _initAutoSave() {
     'selPair',
     // Trading actions
     'placeOrder', 'closePOS', 'resetAcc',
+    // Data transfer — save after import so state is immediately persisted
+    'importTradeData',
   ];
   savingFns.forEach(fn => _wrapFn(fn, saveSettings));
 
