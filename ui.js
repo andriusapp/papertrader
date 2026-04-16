@@ -426,3 +426,271 @@ function _computeDevice() {
   const tablet  = !mobile && (isTablet || (hasTouch && window.innerWidth <= 1024));
   return mobile ? 'mobile' : tablet ? 'tablet' : 'desktop';
 }
+// ── NAV TAB SWITCHER ──────────────────────────────────────────────────
+// Manages the top nav tabs including the new "Paper Trader" chartless view.
+
+let _activeNavTab = 'trade';
+
+function switchNavTab(tab) {
+  _activeNavTab = tab;
+
+  // Update nav button active states
+  document.querySelectorAll('.nav-links .nl').forEach(b => b.classList.remove('on'));
+  const activeBtn = document.getElementById('navTab-' + tab);
+  if (activeBtn) activeBtn.classList.add('on');
+
+  const app    = document.querySelector('.app');
+  const ptView = document.getElementById('ptView');
+
+  if (tab === 'papertrader') {
+    // Show Paper Trader view, hide normal chart grid
+    app.classList.add('pt-mode');
+    ptView.style.display = 'flex';
+    _syncPTView();
+  } else {
+    // Hide Paper Trader view, restore normal grid
+    app.classList.remove('pt-mode');
+    ptView.style.display = 'none';
+  }
+}
+
+// ── Sync PT view elements with current S state ────────────────────────
+function _syncPTView() {
+  // Keep order form inputs mirrored
+  const ptAmt  = document.getElementById('ptAmt');
+  const ptPsl  = document.getElementById('ptPsl');
+  const mainAmt = document.getElementById('amt');
+  const mainPsl = document.getElementById('psl');
+
+  // Sync pair badge
+  const badge = document.getElementById('ptPairBadge');
+  if (badge) badge.textContent = S.pair;
+  const ptSPair = document.getElementById('ptSPair');
+  if (ptSPair) ptSPair.textContent = S.pair;
+
+  // Sync unit labels
+  const p = (typeof stockMode !== 'undefined' && stockMode)
+    ? STOCK_PAIRS?.find(x => x.sym === S.pair)
+    : PAIRS.find(x => x.sym === S.pair);
+  const base = p ? (p.base || p.sym) : S.pair.split('/')[0];
+
+  const ptAunit = document.getElementById('ptAunit');
+  if (ptAunit) ptAunit.textContent = base;
+
+  // Sync buy/sell button states
+  _syncPTButtons();
+
+  // Sync available balance
+  const ptAvShow = document.getElementById('ptAvShow');
+  if (ptAvShow) ptAvShow.textContent = 'Avail: ' + fu(S.bal);
+
+  // Render positions and history in PT tables
+  _ptRenderPos();
+  _ptRenderHist();
+  _ptUpdateStats();
+
+  // Mirror the main order-type UI (lpf visibility)
+  const mainLpf = document.getElementById('lpf');
+  const ptLpf   = document.getElementById('ptLpf');
+  if (mainLpf && ptLpf) ptLpf.style.display = mainLpf.style.display;
+
+  // Render order book into PT book panels
+  _ptRenderBook();
+}
+
+function _syncPTButtons() {
+  const buyBtn  = document.getElementById('ptBuyBtn');
+  const sellBtn = document.getElementById('ptSellBtn');
+  const placeBtn = document.getElementById('ptPlaceBtn');
+  if (buyBtn)  buyBtn.className  = 'bsb buy'  + (S.side === 'buy'  ? ' on' : '');
+  if (sellBtn) sellBtn.className = 'bsb sell' + (S.side === 'sell' ? ' on' : '');
+  if (placeBtn) {
+    placeBtn.className = 'pob ' + S.side;
+    const p = PAIRS.find(x => x.sym === S.pair);
+    const base = p ? p.base : S.pair.split('/')[0];
+    placeBtn.textContent = (S.side === 'buy' ? 'BUY ' : 'SELL ') + base;
+  }
+}
+
+// ── PT-specific slider / calc helpers ─────────────────────────────────
+// These mirror slPct/calcT but write into the PT input fields, then
+// also update the main hidden inputs so placeOrder() reads the right values.
+
+function _ptSlPct(pct) {
+  document.getElementById('ptPsl').value = pct;
+  // Also drive the main form slider/amount
+  slPct(pct);
+  // Mirror back into PT amount field
+  const mainAmt = document.getElementById('amt');
+  const ptAmt   = document.getElementById('ptAmt');
+  if (mainAmt && ptAmt) ptAmt.value = mainAmt.value;
+  _ptCalcT();
+}
+
+function _ptCalcT() {
+  // Mirror PT amount into the main form so placeOrder() picks it up
+  const ptAmt  = document.getElementById('ptAmt');
+  const mainAmt = document.getElementById('amt');
+  if (ptAmt && mainAmt) mainAmt.value = ptAmt.value;
+  calcT();   // updates main form summary
+
+  // Also update PT summary fields
+  const a   = parseFloat(ptAmt?.value) || 0;
+  const pr  = prices[S.pair];
+  const t   = a * pr;
+  const fee = t * 0.001;
+  const ptSPrice = document.getElementById('ptSPrice');
+  const ptSTotal = document.getElementById('ptSTotal');
+  const ptSFee   = document.getElementById('ptSFee');
+  if (ptSPrice) ptSPrice.textContent = S.otype === 'market' ? 'Market' : '$' + fp(pr);
+  if (ptSTotal) ptSTotal.textContent = fu(t);
+  if (ptSFee)   ptSFee.textContent   = fu(fee);
+}
+
+// ── PT positions table ────────────────────────────────────────────────
+function _ptRenderPos() {
+  const tb  = document.getElementById('ptPosTb');
+  const bdg = document.getElementById('ptPosBdg');
+  if (!tb) return;
+  if (bdg) bdg.textContent = S.positions.length;
+
+  if (!S.positions.length) {
+    tb.innerHTML = '<tr class="empty"><td colspan="9">No open positions · Place a trade to get started</td></tr>';
+    return;
+  }
+  tb.innerHTML = S.positions.map(p => {
+    const mk  = prices[p.sym];
+    const pnl = (mk - p.entry) * p.size;
+    const roe = (mk - p.entry) / p.entry * 100;
+    const val = mk * p.size;
+    return `<tr>
+      <td style="font-weight:600">${p.sym}</td>
+      <td><span class="chip long">LONG</span></td>
+      <td>${p.size.toFixed(5)}</td>
+      <td style="color:var(--t2)">$${fp(p.entry)}</td>
+      <td>$${fp(mk)}</td>
+      <td class="${pnl >= 0 ? 'up' : 'dn'}">${pnl >= 0 ? '+' : ''}${fu(pnl)}</td>
+      <td class="${roe >= 0 ? 'up' : 'dn'}">${roe >= 0 ? '+' : ''}${roe.toFixed(2)}%</td>
+      <td>${fu(val)}</td>
+      <td><button class="abt" onclick="closePOS(${p.id})">Close</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── PT history table ──────────────────────────────────────────────────
+function _ptRenderHist() {
+  const tb = document.getElementById('ptHistTb');
+  if (!tb) return;
+  if (!S.history.length) {
+    tb.innerHTML = '<tr class="empty"><td colspan="8">No trade history yet</td></tr>';
+    return;
+  }
+  tb.innerHTML = S.history.slice(0, 60).map(h =>
+    `<tr>
+      <td class="dim">${h.time}</td>
+      <td style="font-weight:600">${h.pair}</td>
+      <td><span class="chip ${h.side === 'BUY' ? 'buy' : 'sell'}">${h.side}</span></td>
+      <td>$${fp(h.price)}</td>
+      <td>${h.amt.toFixed(5)}</td>
+      <td>${fu(h.total)}</td>
+      <td class="dim">${fu(h.fee)}</td>
+      <td class="${h.pnl == null ? 'dim' : h.pnl >= 0 ? 'up' : 'dn'}">
+        ${h.pnl == null ? '—' : (h.pnl >= 0 ? '+' : '') + fu(h.pnl)}
+      </td>
+    </tr>`
+  ).join('');
+}
+
+// ── PT stats bar ──────────────────────────────────────────────────────
+function _ptUpdateStats() {
+  const balEl    = document.getElementById('ptStatBal');
+  const pnlEl    = document.getElementById('ptStatPnl');
+  const posEl    = document.getElementById('ptStatPos');
+  const tradeEl  = document.getElementById('ptStatTrades');
+  const avShow   = document.getElementById('ptAvShow');
+
+  if (balEl)   balEl.textContent   = fu(S.bal);
+  if (avShow)  avShow.textContent  = 'Avail: ' + fu(S.bal);
+  if (posEl)   posEl.textContent   = S.positions.length;
+  if (tradeEl) tradeEl.textContent = S.history.length;
+
+  const sp     = S.bal - S.startBal;
+  const spTxt  = (sp >= 0 ? '+' : '') + fu(sp);
+  const spCol  = sp >= 0 ? 'var(--green)' : sp < 0 ? 'var(--red)' : 'var(--t3)';
+  if (pnlEl) { pnlEl.textContent = spTxt; pnlEl.style.color = spCol; }
+}
+
+// ── PT order book (mirrors renderBook into PT-specific elements) ───────
+function _ptRenderBook() {
+  const pr = prices[S.pair];
+  if (!pr) return;
+  const asks = [], bids = [];
+  for (let i = 0; i < 8; i++) {
+    const ap = pr * (1 + (4e-4 + i * 2.5e-4) * (1 + Math.random() * .4));
+    const av = +(Math.random() * 6 + .05).toFixed(4);
+    asks.push({ p: ap, q: av, t: ap * av });
+  }
+  for (let i = 0; i < 8; i++) {
+    const bp = pr * (1 - (4e-4 + i * 2.5e-4) * (1 + Math.random() * .4));
+    const bv = +(Math.random() * 6 + .05).toFixed(4);
+    bids.push({ p: bp, q: bv, t: bp * bv });
+  }
+  const mx = Math.max(...[...asks, ...bids].map(r => r.q));
+  const ptObA = document.getElementById('ptObA');
+  const ptObB = document.getElementById('ptObB');
+  const ptObP = document.getElementById('ptObP');
+  const ptObT = document.getElementById('ptObT');
+  if (ptObA) ptObA.innerHTML = [...asks].reverse().map(r => {
+    const w = (r.q / mx * 100).toFixed(0);
+    return `<div class="obr ask" onclick="setLP(${r.p.toFixed(2)})"><div class="obf" style="width:${w}%"></div><span>${fp(r.p)}</span><span style="color:var(--t2)">${r.q}</span><span class="dim">${(r.t / 1000).toFixed(1)}K</span></div>`;
+  }).join('');
+  if (ptObB) ptObB.innerHTML = bids.map(r => {
+    const w = (r.q / mx * 100).toFixed(0);
+    return `<div class="obr bid" onclick="setLP(${r.p.toFixed(2)})"><div class="obf" style="width:${w}%"></div><span>${fp(r.p)}</span><span style="color:var(--t2)">${r.q}</span><span class="dim">${(r.t / 1000).toFixed(1)}K</span></div>`;
+  }).join('');
+  const pair = PAIRS.find(x => x.sym === S.pair);
+  if (ptObP) ptObP.textContent = '$' + fp(pr);
+  if (ptObT && pair) {
+    ptObT.textContent = (pair.ch >= 0 ? '+' : '') + pair.ch.toFixed(2) + '%';
+    ptObT.className   = 'ob-mt ' + (pair.ch >= 0 ? 'up' : 'dn');
+  }
+}
+
+// ── Hook PT view into the main render/loop cycle ──────────────────────
+// Wrap the existing renderPos / renderHist / updateHdr so PT tables
+// stay in sync whenever a trade fires, even from the main form.
+(function _patchForPTSync() {
+  const _origRenderPos  = window.renderPos;
+  const _origRenderHist = window.renderHist;
+  const _origUpdateHdr  = window.updateHdr;
+  const _origResetAcc   = window.resetAcc;
+
+  window.renderPos = function() {
+    _origRenderPos.apply(this, arguments);
+    if (_activeNavTab === 'papertrader') { _ptRenderPos(); _ptUpdateStats(); }
+  };
+  window.renderHist = function() {
+    _origRenderHist.apply(this, arguments);
+    if (_activeNavTab === 'papertrader') { _ptRenderHist(); _ptUpdateStats(); }
+  };
+  window.updateHdr = function() {
+    _origUpdateHdr.apply(this, arguments);
+    if (_activeNavTab === 'papertrader') {
+      _ptUpdateStats();
+      // Keep PT pair badge + unit current
+      const badge = document.getElementById('ptPairBadge');
+      if (badge) badge.textContent = S.pair;
+      const ptSPair = document.getElementById('ptSPair');
+      if (ptSPair) ptSPair.textContent = S.pair;
+    }
+  };
+  window.resetAcc = function() {
+    _origResetAcc.apply(this, arguments);
+    if (_activeNavTab === 'papertrader') { _ptRenderPos(); _ptRenderHist(); _ptUpdateStats(); }
+  };
+})();
+
+// Periodically refresh PT order book when the tab is active
+setInterval(() => {
+  if (_activeNavTab === 'papertrader') _ptRenderBook();
+}, 1500);
